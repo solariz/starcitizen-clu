@@ -18,6 +18,11 @@ The script:
 - Downloads and installs the latest lang pack
 - Can be re-run after patches to update the pack
 
+## Screenshot
+
+Simple Screenshot of the Script in Action:
+![SC-CLU Screenshot](screenshot-sc-clu.jpg)
+
 ## Language Pack Credits
 
 This is not a Fork or clone of the Language packs, this tool just downloads language packs fromt their original source created and maintained by:
