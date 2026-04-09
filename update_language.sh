@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VER="2026-03-09"
+VER="2026-04-09"
 GAME="Star Citizen"
 PACK="Custom Language Pack"
 
@@ -28,6 +28,7 @@ URL_BELTAKODA=""
 BELTAKODA_SOURCE=""
 EXOAE_REMIX_STATUS=""
 EXOAE_LONG_STATUS=""
+BELTAKODA_TAG=""
 BELTAKODA_STATUS=""
 URL=""
 PACK_NAME=""
@@ -200,6 +201,7 @@ detect_live_dir() {
 extract_game_version() {
   local manifest_file
   local branch_raw
+  local full_version
 
   SC_VERSION="unknown"
   manifest_file="$LIVE_DIR/build_manifest.id"
@@ -215,35 +217,55 @@ extract_game_version() {
         SC_VERSION="unknown"
       fi
     fi
+
+    full_version="$(grep -i '"Version"' "$manifest_file" | head -n 1 \
+      | sed 's/.*"Version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' \
+      | tr -d '[:space:]' || true)"
   fi
 
   echo -e "${GRAY}============================================================${RESET}"
-  echo -e " Detected Game Version: ${GREEN}${BOLD}${SC_VERSION}${RESET}"
+  echo -e " Detected Game Version: ${GREEN}${BOLD}${SC_VERSION}${RESET}\t${GRAY}(${full_version:-unknown})${RESET}"
   echo -e " Installation Path: ${GRAY}${LIVE_DIR}${RESET}"
   echo -e "${GRAY}============================================================${RESET}"
   echo
 }
 
-# probe_beltakoda determines the correct BeltaKoda URL for this version, if available.
+# probe_beltakoda queries the GitHub releases API for the latest BeltaKoda tag and
+# constructs the download URL from it, avoiding any reliance on local version detection.
 probe_beltakoda() {
   URL_BELTAKODA=""
   BELTAKODA_SOURCE=""
+  BELTAKODA_TAG=""
 
-  if [ "$SC_VERSION" != "unknown" ]; then
+  local api_url="https://api.github.com/repos/BeltaKoda/ScCompLangPackRemix/releases/latest"
+  local tag_name
+
+  tag_name="$(curl -sf "$api_url" \
+    | grep '"tag_name"' \
+    | head -n 1 \
+    | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' \
+    | tr -d '[:space:]')" || tag_name=""
+
+  if [ -n "$tag_name" ]; then
     local probe_url
-    local code
+    local env_suffix
 
-    probe_url="${URL_BELTAKODA_BASE}/${SC_VERSION}/LIVE/data/Localization/english/global.ini"
-    code="$(check_url_status "$probe_url")"
-    if [ "$code" = "200" ]; then
-      URL_BELTAKODA="$probe_url"
-      BELTAKODA_SOURCE="LIVE"
+    if [[ "$tag_name" == *"-LIVE" ]]; then
+      env_suffix="LIVE"
+    elif [[ "$tag_name" == *"-PTU" ]]; then
+      env_suffix="PTU"
     else
-      probe_url="${URL_BELTAKODA_BASE}/${SC_VERSION}/PTU/data/Localization/english/global.ini"
+      env_suffix=""
+    fi
+
+    if [ -n "$env_suffix" ]; then
+      probe_url="${URL_BELTAKODA_BASE}/${tag_name}/${env_suffix}/data/Localization/english/global.ini"
+      local code
       code="$(check_url_status "$probe_url")"
       if [ "$code" = "200" ]; then
         URL_BELTAKODA="$probe_url"
-        BELTAKODA_SOURCE="PTU"
+        BELTAKODA_SOURCE="$env_suffix"
+        BELTAKODA_TAG="$tag_name"
       fi
     fi
   fi
@@ -268,9 +290,9 @@ check_availability() {
     EXOAE_LONG_STATUS="${GREEN}Available${RESET}"
   fi
 
-  BELTAKODA_STATUS="${RED}UNAVAILABLE (v${SC_VERSION} not found)${RESET}"
+  BELTAKODA_STATUS="${RED}UNAVAILABLE (no matching release found)${RESET}"
   if [ -n "${URL_BELTAKODA:-}" ]; then
-    BELTAKODA_STATUS="${GREEN}Available (${BELTAKODA_SOURCE})${RESET}"
+    BELTAKODA_STATUS="${GREEN}Available (${BELTAKODA_SOURCE} - ${BELTAKODA_TAG})${RESET}"
   fi
 }
 
@@ -510,9 +532,9 @@ show_menu_loop() {
 main() {
   check_dependencies
 
-  URL_EXOAE_REMIX="https://github.com/ExoAE/ScCompLangPack/raw/refs/heads/main/remix/global.ini"
+  URL_EXOAE_REMIX="https://github.com/ExoAE/ScCompLangPack/raw/refs/heads/main/ScCompLangPackRemix2/data/Localization/english/global.ini"
   URL_EXOAE_LONG="https://github.com/ExoAE/ScCompLangPack/raw/refs/heads/main/ScCompLangPack/data/Localization/english/global.ini"
-  URL_BELTAKODA_BASE="https://github.com/BeltaKoda/ScCompLangPackRemix/raw/refs/heads/main"
+  URL_BELTAKODA_BASE="https://raw.githubusercontent.com/BeltaKoda/ScCompLangPackRemix/refs/tags"
 
   show_header
   detect_live_dir
@@ -527,4 +549,3 @@ main() {
 }
 
 main "$@"
-
