@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 
-set VER=2025-12-28
+set VER=2026-04-09
 REM ============================================================
 REM  SC.CLU - Star Citizen Component Language Updater
 REM  by solariz, find at:
@@ -34,9 +34,9 @@ set "MINLINES=6000"
 set "MINSIZE=6291456"
 
 REM === Language Pack URLs ===
-set "URL_EXOAE_REMIX=https://github.com/ExoAE/ScCompLangPack/raw/refs/heads/main/remix/global.ini"
+set "URL_EXOAE_REMIX=https://github.com/ExoAE/ScCompLangPack/raw/refs/heads/main/ScCompLangPackRemix2/data/Localization/english/global.ini"
 set "URL_EXOAE_LONG=https://github.com/ExoAE/ScCompLangPack/raw/refs/heads/main/ScCompLangPack/data/Localization/english/global.ini"
-set "URL_BELTAKODA_BASE=https://github.com/BeltaKoda/ScCompLangPackRemix/raw/refs/heads/main"
+set "URL_BELTAKODA_BASE=https://raw.githubusercontent.com/BeltaKoda/ScCompLangPackRemix/refs/tags"
 
 REM ============================================================
 REM  DISPLAY ASCII HEADER
@@ -156,6 +156,7 @@ REM ============================================================
 REM  EXTRACT GAME VERSION FROM build_manifest.id
 REM ============================================================
 set "SC_VERSION="
+set "FULL_VERSION="
 set "MANIFEST_FILE=!LIVE_DIR!\build_manifest.id"
 
 if exist "!MANIFEST_FILE!" (
@@ -167,45 +168,73 @@ if exist "!MANIFEST_FILE!" (
         REM Extract version number (e.g., 4.5.0 from sc-alpha-4.5.0)
         for /f "tokens=3 delims=-" %%V in ("!BRANCH_RAW!") do set "SC_VERSION=%%V"
     )
+    for /f "tokens=* delims=" %%A in ('findstr /i "Version" "!MANIFEST_FILE!"') do (
+        if not defined FULL_VERSION (
+            set "VER_LINE=%%A"
+            for /f "tokens=2 delims=:" %%B in ("!VER_LINE!") do (
+                set "VER_RAW=%%B"
+                set "VER_RAW=!VER_RAW: =!"
+                set "VER_RAW=!VER_RAW:"=!"
+                set "VER_RAW=!VER_RAW:,=!"
+                if not "!VER_RAW!"=="" set "FULL_VERSION=!VER_RAW!"
+            )
+        )
+    )
 )
 
 if "!SC_VERSION!"=="" (
     echo %RED%Warning: Could not detect game version from build_manifest.id%RESET%
     set "SC_VERSION=unknown"
 )
+if not defined FULL_VERSION set "FULL_VERSION=unknown"
 
 echo %GRAY%============================================================%RESET%
-echo  Detected Game Version: %GREEN%%BOLD%!SC_VERSION!%RESET%
+echo  Detected Game Version: %GREEN%%BOLD%!SC_VERSION!%RESET%  %GRAY%(!FULL_VERSION!)%RESET%
 echo  Installation Path: %GRAY%!LIVE_DIR!%RESET%
 echo %GRAY%============================================================%RESET%
 echo.
 
 REM ============================================================
-REM  PROBE BELTAKODA URL (LIVE first, then PTU)
+REM  PROBE BELTAKODA URL (GitHub API - latest release tag)
 REM ============================================================
 set "URL_BELTAKODA="
 set "BELTAKODA_SOURCE="
+set "BELTAKODA_TAG="
 
-if not "!SC_VERSION!"=="unknown" (
-    REM Try LIVE version first
-    set "PROBE_URL=!URL_BELTAKODA_BASE!/!SC_VERSION!/LIVE/data/Localization/english/global.ini"
-    curl -s -L -o nul -w "%%{http_code}" --head "!PROBE_URL!" > "%TEMP%\probe_result.txt" 2>nul
-    set /p PROBE_CODE=<"%TEMP%\probe_result.txt"
-    del "%TEMP%\probe_result.txt" 2>nul
-    
-    if "!PROBE_CODE!"=="200" (
-        set "URL_BELTAKODA=!PROBE_URL!"
-        set "BELTAKODA_SOURCE=LIVE"
-    ) else (
-        REM Try PTU version
-        set "PROBE_URL=!URL_BELTAKODA_BASE!/!SC_VERSION!/PTU/data/Localization/english/global.ini"
+curl -sf "https://api.github.com/repos/BeltaKoda/ScCompLangPackRemix/releases/latest" > "%TEMP%\bk_api.txt" 2>nul
+
+if exist "%TEMP%\bk_api.txt" (
+    for /f "tokens=* delims=" %%A in ('findstr /i "tag_name" "%TEMP%\bk_api.txt"') do (
+        if not defined BELTAKODA_TAG (
+            set "LINE=%%A"
+            for /f "tokens=2 delims=:" %%B in ("!LINE!") do (
+                set "TAG_RAW=%%B"
+                set "TAG_RAW=!TAG_RAW: =!"
+                set "TAG_RAW=!TAG_RAW:"=!"
+                set "TAG_RAW=!TAG_RAW:,=!"
+                if not "!TAG_RAW!"=="" set "BELTAKODA_TAG=!TAG_RAW!"
+            )
+        )
+    )
+)
+del "%TEMP%\bk_api.txt" 2>nul
+
+if defined BELTAKODA_TAG (
+    set "ENV_SUFFIX="
+    echo !BELTAKODA_TAG! | findstr /i /c:"-LIVE" >nul 2>&1
+    if !errorlevel! EQU 0 set "ENV_SUFFIX=LIVE"
+    if not defined ENV_SUFFIX (
+        echo !BELTAKODA_TAG! | findstr /i /c:"-PTU" >nul 2>&1
+        if !errorlevel! EQU 0 set "ENV_SUFFIX=PTU"
+    )
+    if defined ENV_SUFFIX (
+        set "PROBE_URL=!URL_BELTAKODA_BASE!/!BELTAKODA_TAG!/!ENV_SUFFIX!/data/Localization/english/global.ini"
         curl -s -L -o nul -w "%%{http_code}" --head "!PROBE_URL!" > "%TEMP%\probe_result.txt" 2>nul
         set /p PROBE_CODE=<"%TEMP%\probe_result.txt"
         del "%TEMP%\probe_result.txt" 2>nul
-        
         if "!PROBE_CODE!"=="200" (
             set "URL_BELTAKODA=!PROBE_URL!"
-            set "BELTAKODA_SOURCE=PTU"
+            set "BELTAKODA_SOURCE=!ENV_SUFFIX!"
         )
     )
 )
@@ -230,8 +259,8 @@ if "!CHK!"=="200" set "EXOAE_LONG_STATUS=%GREEN%Available%RESET%"
 del "%TEMP%\chk.txt" 2>nul
 
 REM Check BeltaKoda (already probed above)
-set "BELTAKODA_STATUS=%RED%UNAVAILABLE (v!SC_VERSION! not found)%RESET%"
-if defined URL_BELTAKODA set "BELTAKODA_STATUS=%GREEN%Available (!BELTAKODA_SOURCE!)%RESET%"
+set "BELTAKODA_STATUS=%RED%UNAVAILABLE (no matching release found)%RESET%"
+if defined URL_BELTAKODA set "BELTAKODA_STATUS=%GREEN%Available (!BELTAKODA_SOURCE! - !BELTAKODA_TAG!)%RESET%"
 
 REM ============================================================
 REM  DISPLAY SELECTION MENU
